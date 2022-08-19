@@ -1,0 +1,10 @@
+[MASTER]
+init-hook='import sys; sys.path.append("./app")'
+
+[FORMAT]
+max-line-length=120
+max-args = 6
+
+[MESSAGES CONTROL]
+# We consciously disabled checks for docstings, too few public methods and some checks for variables name.
+disable=C0103,C0114,C0115,C0116,E1101,R0903
