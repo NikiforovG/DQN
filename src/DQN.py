@@ -1,7 +1,7 @@
 import random
+import typing as tp
 from collections import namedtuple
 from time import time
-from typing import AbstractSet, Any, Sequence
 
 import matplotlib.pyplot as plt
 import torch
@@ -21,10 +21,10 @@ Transition = namedtuple("Transition", ("state", "action", "next_state", "reward"
 class ReplayMemory:
     def __init__(self, capacity: int) -> None:
         self.capacity: int = capacity
-        self.memory: list[Transition] = []
+        self.memory: tp.List[Transition] = []
         self.position: int = 0
 
-    def push(self, *args: Any) -> None:
+    def push(self, *args: tp.Any) -> None:
         """Saves a transition."""
         if len(self.memory) < self.capacity:
             self.memory.append(Transition(*args))
@@ -32,7 +32,9 @@ class ReplayMemory:
             self.memory[self.position] = Transition(*args)
         self.position = (self.position + 1) % self.capacity
 
-    def sample(self, batch_size: int) -> Sequence[Transition] | AbstractSet[Transition]:
+    def sample(
+        self, batch_size: int
+    ) -> tp.Union[tp.Sequence[Transition], tp.AbstractSet[Transition]]:
         return random.sample(self.memory, batch_size)
 
     def __len__(self) -> int:
@@ -40,9 +42,11 @@ class ReplayMemory:
 
 
 class ExpSmoothedArr:
-    def __init__(self, beta: float, init_arr: Sequence[float] | None = None) -> None:
+    def __init__(
+        self, beta: float, init_arr: tp.Optional[tp.Sequence[float]] = None
+    ) -> None:
         self.beta: float = beta
-        self.arr: list[float] = []
+        self.arr: tp.List[float] = []
 
         if init_arr is not None:
             for val in init_arr:
@@ -96,8 +100,8 @@ class DQN:
         self.memory = ReplayMemory(100000)
 
         self.current_epoch = 0
-        self.scores: list[int] = []
-        self.episode_durations: list[int] = []
+        self.scores: tp.List[int] = []
+        self.episode_durations: tp.List[int] = []
         self.smooth_scores = ExpSmoothedArr(beta=0.9)
         self.smooth_episode_durations = ExpSmoothedArr(beta=0.9)
         self.steps_done = 0
