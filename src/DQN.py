@@ -92,7 +92,7 @@ class DQN:
 
         self.policy_net = DQNNet(inputs, outputs).to(self.device)
 
-        self.target_net = DQNNet(inputs, outputs)
+        self.target_net = DQNNet(inputs, outputs).to(self.device)
         self.target_net.load_state_dict(self.policy_net.state_dict())
         self.target_net.eval()
 
@@ -159,6 +159,7 @@ class DQN:
                 # t.max(1) will return largest column value of each row.
                 # second column on max result is index of where max element was
                 # found, so we pick action with the larger expected reward.
+                # pylint:disable=not-callable
                 action: torch.Tensor = self.target_net(state).max(1)[1].view(1, 1)
                 return action
         else:
