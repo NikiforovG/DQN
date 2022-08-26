@@ -3,8 +3,9 @@ import typing as tp
 from collections import namedtuple
 from time import time
 
-import matplotlib.pyplot as plt
+import numpy as np
 import torch
+import plotly.graph_objects as go
 from torch import nn
 from torch import optim
 
@@ -100,12 +101,15 @@ class DQN:
         self.memory = ReplayMemory(100000)
 
         self.current_epoch = 0
+        self.losses: tp.List[float] = []
+        self.losses_buffer: tp.List[float] = []
         self.scores: tp.List[int] = []
         self.episode_durations: tp.List[int] = []
         self.smooth_scores = ExpSmoothedArr(beta=0.9)
         self.smooth_episode_durations = ExpSmoothedArr(beta=0.9)
         self.steps_done = 0
         self.training_time = 0
+        self.actions_counter = {i: 0 for i in range(outputs)}
 
     def backup(self, path: str) -> None:
         timer = time()
@@ -115,10 +119,12 @@ class DQN:
                 "model_state_dict": self.policy_net.state_dict(),
                 "optimizer_state_dict": self.optimizer.state_dict(),
                 "memory": self.memory,
+                "losses": self.losses,
                 "scores": self.scores,
                 "episode_durations": self.episode_durations,
                 "steps_done": self.steps_done,
                 "training_time": self.training_time,
+                "actions_counter": self.actions_counter,
             },
             path,
         )
@@ -136,10 +142,12 @@ class DQN:
         self.memory = checkpoint["memory"]
 
         self.current_epoch = checkpoint["current_epoch"]
+        self.losses = checkpoint["losses"]
         self.scores = checkpoint["scores"]
         self.episode_durations = checkpoint["episode_durations"]
         self.steps_done = checkpoint["steps_done"]
         self.training_time = checkpoint["training_time"]
+        self.actions_counter = checkpoint["actions_counter"]
 
         self.smooth_scores = ExpSmoothedArr(beta=0.9, init_arr=self.scores)
         self.smooth_episode_durations = ExpSmoothedArr(
@@ -161,13 +169,14 @@ class DQN:
                 # found, so we pick action with the larger expected reward.
                 # pylint:disable=not-callable
                 action: torch.Tensor = self.target_net(state).max(1)[1].view(1, 1)
-                return action
         else:
-            return torch.tensor(
+            action = torch.tensor(
                 [[random.randrange(n_actions)]],  # noqa:S311
                 device=self.device,
                 dtype=torch.int64,
             )
+        self.actions_counter[action.item()] += 1  # type: ignore
+        return action
 
     def optimize(self) -> None:
         if len(self.memory) < BATCH_SIZE:
@@ -218,6 +227,11 @@ class DQN:
             state_action_values, expected_state_action_values.unsqueeze(1)
         )
 
+        self.losses_buffer.append(loss.item())
+        if self.steps_done % 100 == 0:
+            self.losses.append(np.mean(self.losses_buffer).item())
+        self.losses_buffer = []
+
         # Optimize the model
         self.optimizer.zero_grad()
         loss.backward()  # type: ignore
@@ -233,12 +247,48 @@ class DQN:
     def show_stat(self) -> None:
         print(f"{self.current_epoch} episodes played at all")
         print(f"{self.steps_done} learning steps done at all")
-        plt.figure(figsize=(18, 6))
-        plt.plot(self.scores)
-        plt.plot(self.smooth_scores.arr)
-        plt.show()
 
-        plt.figure(figsize=(18, 6))
-        plt.plot(self.episode_durations)
-        plt.plot(self.smooth_episode_durations.arr)
-        plt.show()
+        fig = go.Figure()
+        fig.add_trace(go.Scatter(y=self.scores, mode="lines", name="Score"))
+        fig.add_trace(
+            go.Scatter(y=self.smooth_scores.arr, mode="lines", name="Smooth Score")
+        )
+        fig.update_layout(title="Score")
+        fig.show()
+
+        fig = go.Figure()
+        fig.add_trace(
+            go.Scatter(y=self.episode_durations, mode="lines", name="Episode Duration")
+        )
+        fig.add_trace(
+            go.Scatter(
+                y=self.smooth_episode_durations.arr,
+                mode="lines",
+                name="Smooth Episode Duration",
+            )
+        )
+        fig.update_layout(title="Episode Duration")
+        fig.show()
+
+        fig = go.Figure()
+        fig.add_trace(
+            go.Scatter(
+                x=[i * 100 for i in range(len(self.losses))],
+                y=self.episode_durations,
+                mode="lines",
+                name="Loss",
+            )
+        )
+        fig.update_layout(title="Loss")
+        fig.show()
+
+        fig = go.Figure()
+        fig.add_trace(
+            go.Bar(
+                x=list(self.actions_counter.keys()),
+                y=list(self.actions_counter.values()),
+                name="Actions",
+            )
+        )
+        fig.update_layout(title="Action Counters")
+        fig.show()
