@@ -9,7 +9,7 @@ import plotly.graph_objects as go
 from torch import nn
 from torch import optim
 
-BATCH_SIZE = 64
+BATCH_SIZE = 128
 
 GAMMA = 0.999
 EPS_START = 1
@@ -33,9 +33,7 @@ class ReplayMemory:
             self.memory[self.position] = Transition(*args)
         self.position = (self.position + 1) % self.capacity
 
-    def sample(
-        self, batch_size: int
-    ) -> tp.Union[tp.Sequence[Transition], tp.AbstractSet[Transition]]:
+    def sample(self, batch_size: int) -> tp.Union[tp.Sequence[Transition], tp.AbstractSet[Transition]]:
         return random.sample(self.memory, batch_size)
 
     def __len__(self) -> int:
@@ -43,9 +41,7 @@ class ReplayMemory:
 
 
 class ExpSmoothedArr:
-    def __init__(
-        self, beta: float, init_arr: tp.Optional[tp.Sequence[float]] = None
-    ) -> None:
+    def __init__(self, beta: float, init_arr: tp.Optional[tp.Sequence[float]] = None) -> None:
         self.beta: float = beta
         self.arr: tp.List[float] = []
 
@@ -70,18 +66,20 @@ class DQNNet(nn.Module):
             torch.nn.ReLU(),
         )
         self.layer2 = torch.nn.Sequential(
-            torch.nn.Linear(256, 128), torch.nn.BatchNorm1d(128), torch.nn.ReLU()
+            torch.nn.Linear(256, 256),
+            torch.nn.BatchNorm1d(256),
+            torch.nn.ReLU(),
         )
-        self.layer3 = torch.nn.Sequential(
-            torch.nn.Linear(128, 64), torch.nn.BatchNorm1d(64), torch.nn.ReLU()
-        )
-        self.layer4 = torch.nn.Sequential(torch.nn.Linear(64, outputs))
+        self.layer3 = torch.nn.Sequential(torch.nn.Linear(256, 128), torch.nn.BatchNorm1d(128), torch.nn.ReLU())
+        self.layer4 = torch.nn.Sequential(torch.nn.Linear(128, 64), torch.nn.BatchNorm1d(64), torch.nn.ReLU())
+        self.layer5 = torch.nn.Sequential(torch.nn.Linear(64, outputs), torch.nn.ReLU())
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         out: torch.Tensor = self.layer1(x)
         out = self.layer2(out)
         out = self.layer3(out)
         out = self.layer4(out)
+        out = self.layer5(out)
         return out
 
 
@@ -97,7 +95,7 @@ class DQN:
         self.target_net.load_state_dict(self.policy_net.state_dict())
         self.target_net.eval()
 
-        self.optimizer = optim.Adam(self.policy_net.parameters(), lr=1e-2)
+        self.optimizer = optim.Adam(self.policy_net.parameters(), lr=1e-2, weight_decay=1e-2)
         self.memory = ReplayMemory(100000)
 
         self.current_epoch = 0
@@ -150,16 +148,12 @@ class DQN:
         self.actions_counter = checkpoint["actions_counter"]
 
         self.smooth_scores = ExpSmoothedArr(beta=0.9, init_arr=self.scores)
-        self.smooth_episode_durations = ExpSmoothedArr(
-            beta=0.9, init_arr=self.episode_durations
-        )
+        self.smooth_episode_durations = ExpSmoothedArr(beta=0.9, init_arr=self.episode_durations)
         print(f"Duration of model reading was {round(time() - timer, 1)} sec")
 
     def select_action(self, state: torch.Tensor, n_actions: int) -> torch.Tensor:
         sample = random.random()  # noqa:S311
-        eps_threshold = EPS_END + (EPS_START - EPS_END) * (
-            1e6 - self.steps_done
-        ) / 1e6 * (self.steps_done < 1e6)
+        eps_threshold = EPS_END + (EPS_START - EPS_END) * (1e6 - self.steps_done) / 1e6 * (self.steps_done < 1e6)
         # eps_threshold = EPS_END + (EPS_START - EPS_END) * \
         #     math.exp(-1. * steps_done / EPS_DECAY)
         if sample > eps_threshold:
@@ -194,9 +188,7 @@ class DQN:
             device=self.device,
             dtype=torch.bool,
         )
-        non_final_next_states = torch.cat(
-            [s for s in batch.next_state if s is not None]
-        )
+        non_final_next_states = torch.cat([s for s in batch.next_state if s is not None])
 
         state_batch = torch.cat(batch.state)
         action_batch = torch.cat(batch.action)
@@ -215,16 +207,15 @@ class DQN:
         # state value or 0 in case the state was final.
         next_state_values = torch.zeros(BATCH_SIZE, device=self.device)
 
-        next_state_values[non_final_mask] = (
-            self.target_net(non_final_next_states).max(1)[0].detach()
-        )
+        next_state_values[non_final_mask] = self.target_net(non_final_next_states).max(1)[0].detach()
 
         # Compute the expected Q values
         expected_state_action_values = (next_state_values * GAMMA) + reward_batch
 
         # Compute loss
-        loss = torch.nn.functional.mse_loss(
-            state_action_values, expected_state_action_values.unsqueeze(1)
+        loss = torch.nn.functional.smooth_l1_loss(
+            state_action_values,
+            expected_state_action_values.unsqueeze(1),
         )
 
         self.losses_buffer.append(loss.item())
@@ -250,16 +241,12 @@ class DQN:
 
         fig = go.Figure()
         fig.add_trace(go.Scatter(y=self.scores, mode="lines", name="Score"))
-        fig.add_trace(
-            go.Scatter(y=self.smooth_scores.arr, mode="lines", name="Smooth Score")
-        )
+        fig.add_trace(go.Scatter(y=self.smooth_scores.arr, mode="lines", name="Smooth Score"))
         fig.update_layout(title="Score")
         fig.show()
 
         fig = go.Figure()
-        fig.add_trace(
-            go.Scatter(y=self.episode_durations, mode="lines", name="Episode Duration")
-        )
+        fig.add_trace(go.Scatter(y=self.episode_durations, mode="lines", name="Episode Duration"))
         fig.add_trace(
             go.Scatter(
                 y=self.smooth_episode_durations.arr,

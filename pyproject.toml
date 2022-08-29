@@ -1,3 +1,7 @@
+[tool.black]
+skip-string-normalization = true
+line_length = 120
+
 [tool.poetry]
 name = "dqn"
 version = "0.1.0"
