@@ -230,7 +230,7 @@ class DQN:
         self.losses_buffer.append(loss.item())
         if self.steps_done % 100 == 0:
             self.losses.append(np.mean(self.losses_buffer).item())
-        self.losses_buffer = []
+            self.losses_buffer = []
 
         # Optimize the model
         self.optimizer.zero_grad()
@@ -274,7 +274,7 @@ class DQN:
         fig.add_trace(
             go.Scatter(
                 x=[i * 100 for i in range(len(self.losses))],
-                y=self.episode_durations,
+                y=self.losses,
                 mode="lines",
                 name="Loss",
             )
